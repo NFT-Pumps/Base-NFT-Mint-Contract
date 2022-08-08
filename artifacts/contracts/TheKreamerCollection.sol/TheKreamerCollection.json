@@ -1,7 +1,7 @@
 {
   "_format": "hh-sol-artifact-1",
-  "contractName": "TheKreamerCollection",
-  "sourceName": "contracts/TheKreamerCollection.sol",
+  "contractName": "BaseContract",
+  "sourceName": "contracts/BaseContract.sol",
   "abi": [
     {
       "inputs": [
@@ -1120,7 +1120,7 @@
               "type": "uint8"
             }
           ],
-          "internalType": "struct TheKreamerCollection.WhitelistClaimPass",
+          "internalType": "struct BaseContract.WhitelistClaimPass",
           "name": "whitelistClaimPass",
           "type": "tuple"
         }
