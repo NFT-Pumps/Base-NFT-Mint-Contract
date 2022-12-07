@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.11;
+pragma solidity ^0.8.13;
 
 /********************
  * @author: Techoshi.eth *
@@ -12,9 +12,10 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/finance/PaymentSplitter.sol";
+import "operator-filter-registry/src/DefaultOperatorFilterer.sol";
 
 
-contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
+contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter, DefaultOperatorFilterer {
     using Counters for Counters.Counter;
     using ECDSA for bytes32;
     using Strings for uint256;
@@ -37,9 +38,10 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
     uint256 public tokenPrice = 0.14 ether;
     uint256 public whitelistTokenPrice = 0.055 ether;
     uint256 public maxWhitelistPassMints = 900;
+    uint256 public buyBonusMultiplier = 1;
 
     bool public publicMintIsOpen = false;
-    bool public bogoMintIsOpen = false;
+    bool public publicCrossMintIsOpen = false;
     bool public privateMintIsOpen = false;
     bool public revealed = false;
 
@@ -47,6 +49,7 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
     string public baseExtension = ".json";
     string public hiddenMetadataUri;
 
+    address public crossMintAddress = 0xdAb1a1854214684acE522439684a145E62505233;
     address private _ContractVault = 0x0000000000000000000000000000000000000000;
     address private _ClaimsPassSigner = 0x0000000000000000000000000000000000000000;
 
@@ -144,26 +147,17 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
     }
 
     function openMint(uint256 quantity) external payable {
-        require(tokenPrice * quantity <= msg.value, "Not enough ether sent");
-        uint256 supply = _tokenSupply.current();
         require(publicMintIsOpen == true, "Public Mint Closed");
-        require(quantity <= publicMintMaxLimit, "Mint amount too large");
-        require(quantity + (supply-1) <= MAX_TOKENS, "Not enough tokens remaining");
-
-        for (uint256 i = 0; i < quantity; i++) {
-            _tokenSupply.increment();
-            _safeMint(msg.sender, supply + i);
-        }
-    }
-
-    function bogoMint(uint256 quantity) external payable {
-        
         require(tokenPrice * quantity <= msg.value, "Not enough ether sent");
-        require(quantity <= publicMintMaxLimit, "Mint amount too large");
-        quantity = quantity * 2;        
+
         uint256 supply = _tokenSupply.current();
-        require(bogoMintIsOpen == true, "Bogo Mint Closed");        
-        require(quantity + (supply-1) <= MAX_TOKENS, "Not enough tokens remaining");
+        require(quantity <= publicMintMaxLimit, "Mint amount too large");
+
+        quantity = quantity * buyBonusMultiplier;
+        require(
+            quantity + (supply - 1) <= MAX_TOKENS,
+            "Not enough tokens remaining"
+        );
 
         for (uint256 i = 0; i < quantity; i++) {
             _tokenSupply.increment();
@@ -180,22 +174,58 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
         }
     }
 
+    function crossmint(address _to, uint256 quantity) public payable {
+        require(
+            msg.sender == crossMintAddress,
+            "This function is for Crossmint only."
+        );
+        require(publicCrossMintIsOpen, "Crossmint Closed");
+        require(tokenPrice * quantity == msg.value, "Incorrect ETH value sent");
+
+        uint256 supply = _tokenSupply.current();
+        require(quantity <= publicMintMaxLimit, "Mint amount too large");
+
+        quantity = quantity * buyBonusMultiplier;
+        require(
+            quantity + (supply - 1) <= MAX_TOKENS,
+            "Not enough tokens remaining"
+        );
+
+        for (uint256 i = 0; i < quantity; i++) {
+            _tokenSupply.increment();
+            _safeMint(_to, supply + i);
+        }
+    }
+
+    function updateMultiplier(uint256 _multiplier) external onlyOwner {
+        require(
+            _multiplier > 0 && _multiplier < 5,
+            "_multiplier must be greater than zero"
+        );
+        buyBonusMultiplier = _multiplier;
+    }
+
     function setParams(
         uint256 newPrice,
         uint256 newWhitelistTokenPrice,
         uint256 setOpenMintLimit,
         uint256 setWhistlistPassMintLimit,
+        uint256 _mintMultiplier,
+        address setCrossMintAddress,
         bool setPublicMintState,
-        bool setPrivateMintState,
-        bool setBogoMintState
+        bool setPublicCrossMintIsOpen,
+        bool setPrivateMintState
+        
     ) external onlyOwner {
-        whitelistTokenPrice = newWhitelistTokenPrice;
         tokenPrice = newPrice;
+        whitelistTokenPrice = newWhitelistTokenPrice;    
         publicMintMaxLimit = setOpenMintLimit;
         whitelistMintMaxLimit = setWhistlistPassMintLimit;
+        buyBonusMultiplier = _mintMultiplier;
+        crossMintAddress = setCrossMintAddress;
         publicMintIsOpen = setPublicMintState;
-        privateMintIsOpen = setPrivateMintState;
-        bogoMintIsOpen = setBogoMintState;
+        publicCrossMintIsOpen = setPublicCrossMintIsOpen;
+        privateMintIsOpen = setPrivateMintState;       
     }
 
     function setTransactionMintLimit(uint256 newMintLimit) external onlyOwner {
@@ -216,10 +246,6 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
     function setFreeMints(uint256 amount) external onlyOwner {
         require(amount <= MAX_TOKENS, "Free mint amount too large");
         maxWhitelistPassMints = amount;
-    }
-
-    function toggleBogoMint() external onlyOwner {
-        bogoMintIsOpen = !bogoMintIsOpen;
     }
 
     function togglePublicMint() external onlyOwner {
@@ -307,5 +333,27 @@ contract BaseContract is Ownable, ERC721, ERC721URIStorage, PaymentSplitter {
         _ClaimsPassSigner = newSigner;
     }
 
+    function setApprovalForAll(address operator, bool approved) public override onlyAllowedOperatorApproval(operator) {
+        super.setApprovalForAll(operator, approved);
+    }
 
+    function approve(address operator, uint256 tokenId) public override onlyAllowedOperatorApproval(operator) {
+        super.approve(operator, tokenId);
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) public override onlyAllowedOperator(from) {
+        super.transferFrom(from, to, tokenId);
+    }
+
+    function safeTransferFrom(address from, address to, uint256 tokenId) public override onlyAllowedOperator(from) {
+        super.safeTransferFrom(from, to, tokenId);
+    }
+
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data)
+        public
+        override
+        onlyAllowedOperator(from)
+    {
+        super.safeTransferFrom(from, to, tokenId, data);
+    }
 }

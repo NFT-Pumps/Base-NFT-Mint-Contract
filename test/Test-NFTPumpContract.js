@@ -82,9 +82,6 @@ if (true == true)
             console.log("ToggleMint");
             await currentToken.togglePublicMint();
 
-            console.log("Toggle Bogo");
-            await currentToken.toggleBogoMint();
-
             ethBalance = ethers.utils.formatEther(await ethers.provider.getBalance(owner.address));
             console.log("After Deploy Balance" + ethBalance);
 
@@ -173,9 +170,11 @@ if (true == true)
 
                 TotalAmount = +PreMintCount;
 
+                await currentToken.updateMultiplier(2);
+
                 for (let index = 0; index < PurchaseArray.length; index++) {
                     const element = PurchaseArray[index];
-                    await currentToken.bogoMint(element.amount, { value: ethers.utils.parseEther(element.value) });
+                    await currentToken.openMint(element.amount, { value: ethers.utils.parseEther(element.value) });
                     TotalAmount = TotalAmount + element.amount;
                 }
 
@@ -424,7 +423,48 @@ it("Burn Token", async function () {
 });
 
 it("Set Multiple Parameters", async function () {
-    await currentToken.setParams('70000000000000000', '50000000000000000', '20', '5', true, true, true);
+    const [_00, _01, _02, _03, _04, _05, _06, _07, _08, _09, _10,
+        _11, _12, _13, _14, _15, _16, _17, _18, _19] = await ethers.getSigners();
+
+    await currentToken.setParams(
+        '70000000000000000', 
+        '50000000000000000', 
+        '20', 
+        '5', 
+        '1',
+        _01.address,
+        true, 
+        true,
+        true);
+});
+
+it("Crossmints a token from Dapp", async function () {
+    const [_00, _01, _02, _03, _04, _05, _06, _07, _08, _09, _10,
+        _11, _12, _13, _14, _15, _16, _17, _18, _19] = await ethers.getSigners();
+    
+    const PurchaseArray = [
+        { amount: 2, value: ".14" },
+    ];
+
+    const [adminWallet, userWallet] = await ethers.getSigners();
+    const timestamp = Date.now();
+
+    //Step 4: Turn on Sales
+    const PreMintCount = await currentToken.balanceOf(adminWallet.address)
+    const totalSupply = await currentToken.totalSupply();
+
+    TotalAmount = +PreMintCount;
+
+    for (let index = 0; index < PurchaseArray.length; index++) {
+        const element = PurchaseArray[index];
+        await currentToken.connect(_01).crossmint(_02.address, element.amount, { value: ethers.utils.parseEther(element.value) });
+        TotalAmount = TotalAmount + element.amount;
+    }
+
+    const PostMintCount = await currentToken.balanceOf(adminWallet.address);
+    const totalSupply2 = await currentToken.totalSupply();
+
+    expect(parseInt(totalSupply)).to.lessThan(parseInt(totalSupply2));
 });
 
 it("Gets Total Supply", async function () {
